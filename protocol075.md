@@ -5,13 +5,18 @@ commonly played version.
 
 # Connection
 
+First, create an ENet host with `enet_host_create()`.
+
+Then, compress the host with `enet_host_compress_with_range_coder()`
+and connect with `enet_host_connect()`.
+
 When you connect, you must send a version number as the initial data.
 
-Following that a client needs to send an Existing Player data packet to send
+Following that a client needs to send an Existing Player data packet with
 its own name, team etc.
 
 If the client does not send an Existing Player packet first, but any other
-packet, then the server closes the connection and seems to temporarily ban the
+packet, then the server closes the connection and premanentely bans the
 player.
 
 | Number | AoS version |
@@ -19,8 +24,7 @@ player.
 | 3      | 0.75        |
 | 4      | 0.76        |
 
-Send this magic number as part of the `enet_host_connect(ENetHost, ENetAddress,
-channels, int)` function
+Send this magic number as part of the `enet_host_connect()` function
 
 ## Disconnect Reasons
 
@@ -30,10 +34,12 @@ the client in the event's data (event.data).
 | Number | Reason                       |
 |--------|------------------------------|
 | 1      | Banned                       |
-| 2      | IP connection limit exceded? |
+| 2      | IP connection limit exceded  |
 | 3      | Wrong protocol version       |
 | 4      | Server full                  |
+| 5      | Server shutdown              |
 | 10     | Kicked                       |
+| 20     | Invalid name                 |
 
 ## About Coordinates
 
@@ -96,26 +102,26 @@ this byte.
 
 ## Data types
 
-Generally, all fields in the Protocol are Low Endian if not specified.
+All fields in the Protocol are Little Endian.
 
 The following shorthands are used in this document:
 
-| Shorthand    | details                                                 |
-| -----------: | ----------                                              |
-| Byte         | 8 bits of arbitrary data. Usually accompanied by a note |
-| UByte        | Unisgned 8 bit number                                   |
-| LE Float     | 32bit IEEE float                                        |
-| LE Uint      | 32bit unsigned integer                                  |
-| CP437 String | String encoded with CP437. Usually fixed-length.        |
+| Shorthand    | details                                                                                                        |
+| -----------: | -------------------------------------------------------------------------------------------------------------- |
+| Byte         | 8-bit signed integer                                                                                           |
+| UByte        | 8-bit unisgned integer                                                                                         |
+| LE Uint      | 32-bit unsigned little-endian integer                                                                          |
+| LE Float     | 32-bit little-endian IEEE 754 float                                                                            |
+| CP437 String | Null-terminated string encoded with [CP437](http://en.wikipedia.org/wiki/Code_page_437). Usually fixed-length. |
 
 ## Position Data
 `Client <-> Server`
 
-This packet is used to set the players position.
+This packet is used to set the client player's position.
 
-|-----------:|----------|
-|Packet ID:  |  0       |
-|Total Size: | 13 bytes |
+|Packet ID|Total Size|
+|--------:|----------|
+|        0|13 bytes  |
 
 |Field Name|Field Type|Example|Notes|
 |---------:|----------|-------|-----|
@@ -124,11 +130,12 @@ This packet is used to set the players position.
 |        z | LE Float |  `0`  |     |
 
 ## Orientation Data
-This packet is used to set the players orientation.
+This packet is used to set the client player's orientation.
 
-|-----------:|----------|
-|Packet ID   |  1       |
-|Total Size: | 13 bytes |
+
+|Packet ID|Total Size|
+|--------:|----------|
+|        1|13 bytes  |
 
 #### Fields
 
@@ -139,13 +146,14 @@ This packet is used to set the players orientation.
 |        z | LE Float |  `0`  |     |
 
 ## World Update (0.75)
-Updates position and orientation of all players. Always sends data for 32
-players, with empty slots being all 0 (position: [0,0,0], orientation:
-[0,0,0]).
+Updates position and orientation of all players. Usually
+sends data only up to the greatest ID of the connected players,
+with any disconnected players in between usually being set to
+entirely 0 {0, 0, 0, 0, 0, 0}.
 
-| ----------: | -------- |
-| Packet ID   | 2        |
-| Total Size: | 13 bytes |
+|Packet ID|Total Size     |
+|--------:|---------------|
+|        2|Up to 769 bytes|
 
 #### Fields
 
@@ -155,8 +163,10 @@ players, with empty slots being all 0 (position: [0,0,0], orientation:
 
 #### 'Player Position Data'
 
-| ----------: | --------- |
-| Total Size: | 769 bytes |
+
+|Total Size|
+|----------|
+|24 bytes  |
 
 #### Fields
 
@@ -173,9 +183,10 @@ players, with empty slots being all 0 (position: [0,0,0], orientation:
 Updates position and orientation of all players. Unlike 0.75, this only sends
 information for the necessary players.
 
-| -----------: | ----------    |
-| Packet ID    | 2             |
-| Total Size:  | 1 + 25n bytes |
+
+|Packet ID|Total Size             |
+|--------:|-----------------------|
+|        2|(1 + 25\*players) bytes|
 
 #### Fields
 
@@ -185,8 +196,9 @@ information for the necessary players.
 
 #### 'Player Position Data'
 
-|------------:|----------|
-| Total Size: | 24 bytes |
+|Total Size|
+|----------|
+|25 bytes  |
 
 #### Fields
 
@@ -201,11 +213,11 @@ information for the necessary players.
 | z orientation | LE Float   | `0`     |       |
 
 ## Input Data
-Contains the key-states of a player, packed into a byte.
+Contains the key-states (movement) of a player, packed into a byte.
 
-| ----------- | -------- |
-| Packet ID   | 3        |
-| Total Size: | 3 bytes  |
+|Packet ID|Total Size|
+|--------:|----------|
+|        3|3 bytes   |
 
 #### Fields
 
@@ -228,28 +240,27 @@ Contains the key-states of a player, packed into a byte.
 | 8         | sprint |
 
 ## Weapon Input
-Contains the weapon input state(?).
+Contains the weapon input state.
 
-|------------:|---------|
-| Packet ID   | 4       |
-| Total Size: | 3 bytes |
+|Packet ID|Total Size|
+|--------:|----------|
+|        4|3 bytes   |
 
-| Field Name   | Field Type | Example | Notes                                                                                        |
-|--------------|------------|---------|----------------------------------------------------------------------------------------------|
-| player ID    | UByte      | `0`     |                                                                                              |
-| weapon input | UByte      | `0`     | The lowest bit represents the primary fire, the second lowest represents the secondary fire. |
+| Field Name   | Field Type | Example | Notes                                                                                                                                |
+|--------------|------------|---------|--------------------------------------------------------------------------------------------------------------------------------------|
+| player ID    | UByte      | `0`     |                                                                                                                                      |
+| weapon input | UByte      | `0`     | The lowest bit (with a value of 1) represents the primary fire, the second lowest (with a value of 2) represents the secondary fire. |
 
 ## Hit Packet
 #### Client-to-Server
 
-Sent by the client when a hit is registered. The server should verify that this
+Sent by the client when another player is hit by it. The server should verify that this
 is possible to prevent abuse (such as hitting without shooting, facing the
-wrong way, etc).
+wrong way, _shooting into a wall_, etc.).
 
-
-| -----------:| ------- |
-| Packet ID   | 5       |
-| Total Size: | 3 bytes |
+|Packet ID|Total Size|
+|--------:|----------|
+|        5|3 bytes   |
 
 #### Fields
 
@@ -273,10 +284,9 @@ wrong way, etc).
 
 Sent to the client when hurt.
 
-
-| -----------:| -------- |
-| Packet ID   | 5        |
-| Total Size: | 15 bytes |
+|Packet ID|Total Size|
+|--------:|----------|
+|        5|15 bytes  |
 
 | Field Name        | Field Type | Example | Notes                |
 |-------------------|------------|---------|----------------------|
@@ -289,9 +299,9 @@ Sent to the client when hurt.
 ## Grenade Packet
 Spawns a grenade with the given information.
 
-| ------------:| --------- |
-| Packet ID    | 6         |
-| Total Size:  | 30 bytes  |
+|Packet ID|Total Size|
+|--------:|----------|
+|        6|30 bytes  |
 
 #### Fields
 
@@ -309,10 +319,9 @@ Spawns a grenade with the given information.
 ## Set Tool
 Sets a player's currently equipped tool/weapon.
 
-
-|------------:|---------|
-| Packet ID   | 7       |
-| Total Size: | 3 bytes |
+|Packet ID|Total Size|
+|--------:|----------|
+|        7|3 bytes   |
 
 #### Fields
 
@@ -333,9 +342,9 @@ Sets a player's currently equipped tool/weapon.
 ## Set Colour
 Set the colour of a player's held block.
 
-|------------:|---------|
-| Packet ID   | 8       |
-| Total Size: | 5 bytes |
+|Packet ID|Total Size|
+|--------:|----------|
+|        8|5 bytes   |
 
 | Field Name | Field Type | Example | Notes |
 |------------|------------|---------|-------|
@@ -347,31 +356,30 @@ Set the colour of a player's held block.
 ## Existing Player
 Set player's team, weapon, etc.
 
-
-|------------:|---------|
-| Packet ID   | 9       |
-| Total Size: | depends |
+|Packet ID|Total Size    |
+|--------:|--------------|
+|        9|13 to 28 bytes|
 
 #### Fields
 
-| Field Name | Field Type                                                 | Example | Notes |
-|------------|------------------------------------------------------------|---------|-------|
-| player ID  | UByte                                                      | `0`     |       |
-| team       | Byte                                                       | `0`     |       |
-| weapon     | UByte                                                      | `0`     |       |
-| held item  | UByte                                                      | `0`     |       |
-| kills      | LE UInt                                                    | `0`     |       |
-| blue       | UByte                                                      | `0`     |       |
-| green      | UByte                                                      | `0`     |       |
-| red        | UByte                                                      | `0`     |       |
-| name       | [CP437](http://en.wikipedia.org/wiki/Code_page_437) String | `Deuce` |       |
+| Field Name | Field Type   | Example | Notes |
+|------------|--------------|---------|-------|
+| player ID  | UByte        | `0`     |       |
+| team       | Byte         | `0`     |       |
+| weapon     | UByte        | `0`     |       |
+| held item  | UByte        | `0`     |       |
+| kills      | LE Uint      | `0`     |       |
+| blue       | UByte        | `0`     |       |
+| green      | UByte        | `0`     |       |
+| red        | UByte        | `0`     |       |
+| name       | CP437 String | `Deuce` |       |
 
 ## Short Player Data
 Like Existing Player, but with less information.
 
-|------------:|---------|
-| Packet ID   | 10      |
-| Total Size: | 4 bytes |
+|Packet ID|Total Size|
+|--------:|----------|
+|       10|4 bytes   |
 
 #### Fields
 
@@ -384,9 +392,9 @@ Like Existing Player, but with less information.
 ## Move Object
 This packet is used to move various game objects like tents, intels and even grenades. When moving grenades in TC mode the voxlap client has a bug that changes grenades' models to small tents.
 
-| ----------: | -------- |
-| Packet ID   | 11       |
-| Total Size: | 15 bytes |
+|Packet ID|Total Size|
+|--------:|----------|
+|       11|15 bytes  |
 
 #### Fields
 
@@ -401,28 +409,28 @@ This packet is used to move various game objects like tents, intels and even gre
 ## Create Player
 Send on respawn of a player.
 
-| ----------: | ------- |
-| Packet ID   | 12      |
-| Total Size: | depends |
+|Packet ID|Total Size    |
+|--------:|--------------|
+|       12|17 to 32 bytes|
 
 #### Fields
 
-| Field Name | Field Type                                                 | Example | Notes |
-|------------|------------------------------------------------------------|---------|-------|
-| player id  | UByte                                                      | `0`     |       |
-| weapon     | UByte                                                      | `0`     |       |
-| team       | Byte                                                       | `0`     |       |
-| x position | LE Float                                                   | `0`     |       |
-| y position | LE Float                                                   | `0`     |       |
-| z position | LE Float                                                   | `0`     |       |
-| name       | [CP437](http://en.wikipedia.org/wiki/Code_page_437) String | `Deuce` |       |
+| Field Name | Field Type   | Example | Notes |
+|------------|--------------|---------|-------|
+| player id  | UByte        | `0`     |       |
+| weapon     | UByte        | `0`     |       |
+| team       | Byte         | `0`     |       |
+| x position | LE Float     | `0`     |       |
+| y position | LE Float     | `0`     |       |
+| z position | LE Float     | `0`     |       |
+| name       | CP437 String | `Deuce` |       |
 
 ## Block Action
 Sent when a block is placed/destroyed.
 
-| ----------: | -------- |
-| Packet ID   | 13       |
-| Total Size: | 15 bytes |
+|Packet ID|Total Size|
+|--------:|----------|
+|       13|15 bytes  |
 
 #### Fields
 
@@ -447,9 +455,9 @@ Sent when a block is placed/destroyed.
 ## Block Line
 Create a line of blocks between 2 points. The block color is defined by the `Set Color` packet. 
 
-| ----------: | -------- |
-| Packet ID   | 14       |
-| Total Size: | 26 bytes |
+|Packet ID|Total Size|
+|--------:|----------|
+|       14|26 bytes  |
 
 | Field Name       | Field Type      | Example | Notes |
 | ---------------- | --------------- | ------- | ----- |
@@ -462,11 +470,11 @@ Create a line of blocks between 2 points. The block color is defined by the `Set
 | end z position   | LE Int          | `0`     |       |
 
 ## CTF State
-Brief description.
+This is appended to the end of the State Data packet (after the gamemode id field) for games using the CTF gamemode.
 
-| ----------: | -------- |
-| Packet ID   | none     |
-| Total Size: | 52 bytes |
+|Total Size|
+|----------|
+|52 bytes  |
 
 #### Fields
 
@@ -493,29 +501,33 @@ Floats with its x, y and z position.
 #### Fields
 
 | Intel State         | Field Name        | Field Type   |
-| ------------------- | ------------      | ------------ |
+| ------------------- | ----------------- | ------------ |
 | Held                | holding player id | UByte        |
-|                     | padding           | 11 bytes     |
+|                     | padding           | 11 Bytes     |
 | Dropped             | intel x position  | LE Float     |
 |                     | intel y position  | LE Float     |
 |                     | intel z position  | LE Float     |
 
-This packet is not a complete packet, as it is only sent after the initial
-data, where the gamemode is sent. It could be considered as part of that
-initial data packet, but as what's sent varies greatly depending on the
-gamemode, it is documented separately.
-
 ## TC State
+This is appended to the end of the State Data packet (after the gamemode id field) for games using the TC gamemode.
 
-| Field Name                | Field Type                          | Example | Notes                                                                      |
-| ------------------------- | ----------------------------------- | ------- | -------------------------------------------------------------------------- |
-| territory count           | UByte                               | 16      | Maximum is 16 otherwise the client will crash with 'Invalid memory access' |
-| Array[] of territory data | LE Float, LE Float, LE Float, UByte |         | See table below                                                            |
+|Total Size               |
+|-------------------------|
+|(1+13\*territories) bytes|
 
-This packet is not a complete packet, as it is only sent after the initial
-data, where the gamemode is sent. It could be considered as part of that
-initial data packet, but as what's sent varies greatly depending on the
-gamemode, it is documented separately.
+| Field Name                | Field Type | Example | Notes                                                                          |
+| ------------------------- | ---------- | ------- | ------------------------------------------------------------------------------ |
+| territory count           | UByte      | 16      | Maximum is 16 otherwise voxlap clients will crash with 'Invalid memory access' |
+| Array[] of territory data |            |         | See table below                                                                |
+
+#### Fields
+
+| Field name           | Field Type | Example | Notes |
+| -------------------- | ---------- | ------- | ----- |
+| territory x position | LE Float   | `256.0` |       |
+| territory y position | LE Float   | `256.0` |       |
+| territory z position | LE Float   | `62.0`  |       |
+| territory team       | UByte      | `0`     |       |
 
 ## State Data
 `Server-->Client`
@@ -524,27 +536,27 @@ Indicates that the map transfer is complete. Also informs the client of
 numerous game parameters. Be aware that CTFState or TCState may be appended to
 the packet after the gamemode id portion.
 
-| ----------: | -------- |
-| Packet ID   | 15       |
-| Total Size: | 52 bytes |
+|Packet ID|Total Size (CTF)|Total Size (TC)           |
+|--------:|----------------|--------------------------|
+|       15|84 bytes        |(33+13\*territories) bytes|
 
 #### Fields
 
-| Field Name             | Field Type     | Example   | Notes                     |
-| ---------------------- | -------------- | --------- | ------------------------- |
-| player id              | UByte          | 0         |                           |
-| fog (blue)             | UByte          | 0         |                           |
-| fog (green)            | UByte          | 0         |                           |
-| fog (red)              | UByte          | 0         |                           |
-| team 1 color (blue)    | UByte          | 0         |                           |
-| team 1 color (green)   | UByte          | 0         |                           |
-| team 1 color (red)     | UByte          | 0         |                           |
-| team 2 color (blue)    | UByte          | 0         |                           |
-| team 2 color (green)   | UByte          | 0         |                           |
-| team 2 color (red)     | UByte          | 0         |                           |
-| team name 1            | CP437 String   | Blue      | Always 10 characters long |
-| team name 2            | CP437 String   | Green     | Always 10 characters long |
-| gamemode id            | UByte          | 0         | 0 for CTF, 1 for TC       |
+| Field Name             | Field Type   | Example   | Notes                     |
+| ---------------------- | ------------ | --------- | ------------------------- |
+| player id              | UByte        | 0         |                           |
+| fog (blue)             | UByte        | 0         |                           |
+| fog (green)            | UByte        | 0         |                           |
+| fog (red)              | UByte        | 0         |                           |
+| team 1 color (blue)    | UByte        | 0         |                           |
+| team 1 color (green)   | UByte        | 0         |                           |
+| team 1 color (red)     | UByte        | 0         |                           |
+| team 2 color (blue)    | UByte        | 0         |                           |
+| team 2 color (green)   | UByte        | 0         |                           |
+| team 2 color (red)     | UByte        | 0         |                           |
+| team name 1            | CP437 String | Blue      | Always 10 characters long |
+| team name 2            | CP437 String | Green     | Always 10 characters long |
+| gamemode id            | UByte        | 0         | 0 for CTF, 1 for TC       |
 
 
 ## Kill Action
@@ -552,9 +564,11 @@ the packet after the gamemode id portion.
 
 Notify the client of a player's death.
 
-| ----------: | -------- |
-| Packet ID   | 16       |
-| Total Size: | 5 bytes  |
+|Packet ID|Total Size|
+|--------:|----------|
+|       16|5 bytes   |
+
+#### Fields
 
 | Field Name       | Field Type | Example | Notes                 |
 |------------------|------------|---------|-----------------------|
@@ -562,8 +576,6 @@ Notify the client of a player's death.
 | killer ID        | UByte      | 8       |                       |
 | kill type        | UByte      | 0       | See table below       |
 | respawn time     | UByte      | 1       | Seconds until respawn |
-
-#### Fields
 
 If sent any value higher than 6 in Ace of Spades (voxlap), game
 will display the kill message as "Derpy Kill Message"
@@ -588,11 +600,11 @@ Reasonable limits must placed on length and frequency of chat messages.
 | Packet ID   | 17       |
 | Total Size: | . bytes  |
 
-| Field Name   | Field Type                                                 | Example           | Notes           |
-|--------------|------------------------------------------------------------|-------------------|-----------------|
-| player id    | UByte                                                      | `0`               |                 |
-| Chat Type    | UByte                                                      | `0`               | See table below |
-| Chat Message | [CP437](http://en.wikipedia.org/wiki/Code_page_437) String | `"join /squad 1"` |                 |
+| Field Name   | Field Type   | Example           | Notes           |
+|--------------|--------------|-------------------|-----------------|
+| player id    | UByte        | `0`               |                 |
+| Chat Type    | UByte        | `0`               | See table below |
+| Chat Message | CP437 String | `"join /squad 1"` |                 |
 
 
 
@@ -617,7 +629,7 @@ Should be the first packet received when a client connects.
 
 | Field Name | Field Type | Example | Notes |
 |------------|------------|---------|-------|
-| Map size   | Uint32     | `4567`  |       |
+| Map size   | LE Uint    | `4567`  |       |
 
 ## Map Start (0.76)
 #### Server->Client
@@ -633,11 +645,11 @@ Should be the first packet received when a client connects.
 
 #### Fields
 
-| Field Name | Field Type                                                 | Example       | Notes |
-|------------|------------------------------------------------------------|---------------|-------|
-| Map size   | Uint32                                                     | `283839`      |       |
-| CRC32      | Uint32                                                     | `0x4c7ebe43`  |       |
-| Map name   | [CP437](http://en.wikipedia.org/wiki/Code_page_437) String | `"pinpoint2"` |       |
+| Field Name | Field Type   | Example       | Notes |
+|------------|--------------|---------------|-------|
+| Map size   | LE Uint      | `283839`      |       |
+| CRC32      | LE Uint      | `0x4c7ebe43`  |       |
+| Map name   | CP437 String | `"pinpoint2"` |       |
 
 ## Map Chunk
 #### Server->Client
@@ -654,7 +666,7 @@ Should always be the next sequence of packets after a **Map Start** packet.
 
 | Field Name | Field Type | Example | Notes                                                                                                                              |
 |------------|------------|---------|------------------------------------------------------------------------------------------------------------------------------------|
-| Map Data   | UByte      | `0`     | [DEFLATE/zlib](http://en.wikipedia.org/wiki/DEFLATE) encoded [AOS map data](http://silverspaceship.com/aosmap/aos_file_format.html)|
+| Map Data   | UByte/Byte | `0`     | [DEFLATE/zlib](http://en.wikipedia.org/wiki/DEFLATE) encoded [AOS map data](http://silverspaceship.com/aosmap/aos_file_format.html)|
 
 ## Player Left
 #### Server->Protocol
@@ -902,8 +914,8 @@ Powerthirst features such as long-name support.
 
 | Field Name | Field Type | Example | Notes |
 |------------|------------|---------|-------|
-| Map size   | Uint32     | `4567`  |       |
-| PT version | UInt32     | `4`     |       |
+| Map size   | LE Uint    | `4567`  |       |
+| PT version | LE Uint    | `4`     |       |
 
 ## Map Chunk (PT)
 #### Server->Client
@@ -930,10 +942,10 @@ This is just a remapping of the [Map Chunk](#map-chunk) packet to 2 packets back
 
 #### Fields
 
-| Field Name  | Field Type                                                 | Example | Notes |
-|-------------|------------------------------------------------------------|---------|-------|
-| Script size | Uint32                                                     | `4567`  |       |
-| Module name | [CP437](http://en.wikipedia.org/wiki/Code_page_437) String |         |       |
+| Field Name  | Field Type   | Example | Notes |
+|-------------|--------------|---------|-------|
+| Script size | LE Uint      | `4567`  |       |
+| Module name | CP437 String |         |       |
 
 ## Script Chunk (PT)
 #### Server->Client
@@ -941,7 +953,7 @@ This is just a remapping of the [Map Chunk](#map-chunk) packet to 2 packets back
 This is just a remapping of the [Map_Chunk](#map-chunk) packet to 2 packets back to stop vanilla clients from connecting.
 
 
-| ----------: | --------       |
+| ----------: | -------------- |
 | Packet ID   | 32             |
 | Total Size: | (varies) bytes |
 
@@ -963,24 +975,24 @@ Once this is sent, the script is loaded.
 
 #### Fields
 
-| Field Name  | Field Type                                                 | Example | Notes |
-|-------------|------------------------------------------------------------|---------|-------|
-| Module name | [CP437](http://en.wikipedia.org/wiki/Code_page_437) String |         |       |
+| Field Name  | Field Type   | Example | Notes |
+|-------------|--------------|---------|-------|
+| Module name | CP437 String |         |       |
 
 ## Script Call (PT)
 #### Server->Client
 
 
-| ----------: | --------       |
+| ----------: | -------------- |
 | Packet ID   | 34             |
 | Total Size: | (varies) bytes |
 
 #### Fields
 
-| Field Name    | Field Type                                                              | Example       | Notes                                                      |
-|---------------|-------------------------------------------------------------------------|---------------|------------------------------------------------------------|
-| Function name | 0-terminated [CP437](http://en.wikipedia.org/wiki/Code_page_437) String | `void main()` | Must be an AngelScript prototype, not just the name itself |
-| Parameters    | See below                                                               |               |                                                            |
+| Field Name    | Field Type                   | Example       | Notes                                                      |
+|---------------|--------------|---------------|------------------------------------------------------------|
+| Function name | CP437 String | `void main()` | Must be an AngelScript prototype, not just the name itself |
+| Parameters    | See below    |               |                                                            |
 
 ### Script Parameters
 Start from after the 0-byte in the Function name string. Then, loop through these IDs:
